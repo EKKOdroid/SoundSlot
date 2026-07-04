@@ -2,7 +2,8 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const DATA_FILE = path.join(ROOT, "data.json");
 const APP_VERSION = "1.3.0";
@@ -652,6 +653,7 @@ const server = http.createServer(async (request, response) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`SoundSlot running on http://localhost:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`SoundSlot running on http://${HOST}:${PORT}`);
+  console.log(`SoundSlot also available at http://localhost:${PORT}`);
 });

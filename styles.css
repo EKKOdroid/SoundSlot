@@ -10,6 +10,7 @@
   --warm: #4bb8ff;
   --rose: #c85cff;
   --shadow: 0 18px 45px rgba(7, 22, 74, 0.14);
+  --transition: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 * {
@@ -45,7 +46,7 @@ button,
   font-weight: 800;
   padding: 0.85rem 1rem;
   text-decoration: none;
-  transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
+  transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease, opacity 220ms ease;
 }
 
 button:hover,
@@ -1200,8 +1201,374 @@ input[type="range"] {
   }
 }
 
+body {
+  background:
+    radial-gradient(circle at top left, rgba(154, 92, 255, 0.14), transparent 28%),
+    linear-gradient(180deg, #f8faff 0%, var(--soft) 100%);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+section,
+aside,
+header,
+form,
+.card,
+.teacher-card,
+.booking-item,
+.filters,
+.search-panel,
+.booking-desk {
+  animation: fade-up 560ms var(--transition) both;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+main {
+  overflow-x: clip;
+}
+
+.site-header,
+.hero,
+.quick-stats,
+.app-layout,
+.booking-desk,
+.signup-shell,
+.contact-shell,
+.account-shell,
+.admin-shell,
+.admin-hero,
+.admin-dashboard,
+.admin-section,
+.admin-lock {
+  width: min(100%, 1320px);
+  margin-inline: auto;
+}
+
+.site-header {
+  border-radius: 0 0 18px 18px;
+}
+
+.main-nav {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.main-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.hero {
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(7, 22, 74, 0.15);
+}
+
+.hero-copy {
+  padding-right: 0.5rem;
+}
+
+.search-panel {
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 35px rgba(7, 22, 74, 0.16);
+}
+
+.quick-stats {
+  gap: 0.85rem;
+  margin-top: -1rem;
+  transform: none;
+  background: transparent;
+}
+
+.quick-stats div {
+  min-height: 92px;
+  border-radius: 18px;
+  box-shadow: 0 14px 30px rgba(7, 22, 74, 0.08);
+}
+
+.section-heading {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.filters,
+.teacher-card,
+.booking-item,
+.teacher-apply,
+.feedback-form,
+.settings-panel,
+.teacher-dashboard {
+  border-radius: 18px;
+}
+
+.filters {
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 32px rgba(7, 22, 74, 0.08);
+}
+
+.results-top {
+  margin-bottom: 1rem;
+  align-items: center;
+}
+
+.teacher-grid {
+  gap: 1rem;
+}
+
+.teacher-card {
+  box-shadow: 0 10px 24px rgba(7, 22, 74, 0.07);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.teacher-card:hover {
+  transform: translateY(-3px) scale(1.01);
+  box-shadow: 0 14px 34px rgba(7, 22, 74, 0.12);
+  border-color: rgba(154, 92, 255, 0.28);
+}
+
+.teacher-card img {
+  aspect-ratio: 4 / 3;
+}
+
+.teacher-body {
+  gap: 0.85rem;
+}
+
+.booking-desk {
+  border-radius: 24px;
+  box-shadow: 0 16px 40px rgba(7, 22, 74, 0.08);
+}
+
+.booking-item {
+  align-items: flex-start;
+  background: rgba(255, 255, 255, 0.95);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.booking-item:hover {
+  transform: translateY(-2px);
+  border-color: rgba(154, 92, 255, 0.24);
+  box-shadow: 0 10px 24px rgba(7, 22, 74, 0.07);
+}
+
+.booking-item button,
+.booking-item [data-pay] {
+  flex-shrink: 0;
+}
+
+.booking-modal {
+  width: min(720px, calc(100% - 1rem));
+}
+
+.modal-card {
+  padding: 1.1rem;
+  border-radius: 20px;
+}
+
+input,
+select,
+textarea {
+  border-color: rgba(217, 222, 245, 0.95);
+  box-shadow: inset 0 1px 2px rgba(7, 22, 74, 0.03);
+}
+
+button,
+.primary-link,
+.button-link {
+  border-radius: 999px;
+  padding: 0.85rem 1.15rem;
+  box-shadow: 0 10px 24px rgba(154, 92, 255, 0.16);
+}
+
+.secondary-button {
+  border-radius: 999px;
+}
+
+@media (max-width: 1050px) {
+  .app-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .filters {
+    position: static;
+    order: 2;
+  }
+
+  .teacher-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .site-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.7rem;
+    padding: 0.8rem 1rem;
+  }
+
+  .main-nav {
+    width: 100%;
+    justify-content: flex-start;
+    border-radius: 14px;
+    padding: 0.35rem;
+  }
+
+  .main-nav a {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 0.7rem 0.8rem;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+    min-height: auto;
+    align-items: start;
+    padding: 2rem 1rem 1.25rem;
+  }
+
+  .hero-copy {
+    padding-right: 0;
+  }
+
+  .hero h1 {
+    font-size: clamp(2rem, 5vw, 3rem);
+  }
+
+  .hero p:not(.eyebrow) {
+    font-size: 1rem;
+  }
+
+  .quick-stats {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    margin-inline: 1rem;
+    margin-top: 0;
+  }
+
+  .quick-stats div {
+    min-height: auto;
+  }
+
+  .app-layout {
+    padding: 1rem 1rem 2rem;
+    gap: 1rem;
+  }
+
+  .results-top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .results-top label {
+    width: 100%;
+  }
+
+  .teacher-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .teacher-title,
+  .teacher-actions,
+  .booking-item,
+  .managed-profile {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .booking-desk {
+    margin: 0 1rem 2rem;
+    padding: 1rem;
+  }
+
+  .booking-modal {
+    width: calc(100% - 1rem);
+  }
+
+  .modal-card {
+    padding: 1rem;
+  }
+
+  .calendar-day {
+    min-height: 64px;
+  }
+
+  .admin-topline,
+  .admin-list-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .admin-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 520px) {
+  .site-header,
+  .hero,
+  .app-layout,
+  .booking-desk,
+  .signup-shell,
+  .contact-shell,
+  .account-shell,
+  .admin-shell {
+    padding-inline: 0.8rem;
+  }
+
+  .main-nav {
+    overflow-x: auto;
+  }
+
+  .main-nav a {
+    padding: 0.65rem 0.72rem;
+    font-size: 0.85rem;
+  }
+
+  .quick-stats {
+    margin-inline: 0.8rem;
+  }
+
+  .teacher-grid {
+    gap: 0.8rem;
+  }
+
+  .teacher-body {
+    padding: 0.9rem;
+  }
+
+  .booking-item {
+    padding: 0.85rem;
+  }
+
+  .calendar-times {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .admin-metrics {
     grid-template-columns: 1fr;
+  }
+
+  button,
+  .primary-link,
+  .button-link {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .secondary-button {
+    width: auto;
   }
 }
