@@ -89,7 +89,7 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1.25rem;
+  gap: 5rem;
   padding: 0.8rem clamp(1rem, 4vw, 4rem);
   background: rgba(255, 255, 255, 0.9);
   border-bottom: 1px solid rgba(217, 222, 245, 0.9);
