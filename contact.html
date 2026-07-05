@@ -78,45 +78,12 @@
       <div class="success-message" id="feedbackSuccess"></div>
     </form>
 
-    <form class="feedback-form donation-form" id="donationForm">
-      <div>
-        <p class="eyebrow">Support the app</p>
-        <h2>Developer donation</h2>
-      </div>
-      <label>
-        Your name
-        <input type="text" id="donorName" placeholder="Anonymous">
-      </label>
-      <label>
-        Your email
-        <input type="email" id="donorEmail" placeholder="you@example.com">
-      </label>
-      <label>
-        Donation amount
-        <input type="number" id="donationAmount" min="1" step="0.01" required placeholder="5.00">
-      </label>
-      <label>
-        Message
-        <textarea id="donationMessage" rows="3" placeholder="Optional note for the developer"></textarea>
-      </label>
-      <button type="submit">Donate to developer</button>
-      <p class="calendar-note">You will be sent to Stripe to complete the donation securely.</p>
-      <div class="success-message" id="donationSuccess"></div>
-    </form>
   </main>
 
   <script>
     const form = document.getElementById("feedbackForm");
     const success = document.getElementById("feedbackSuccess");
-    const donationForm = document.getElementById("donationForm");
-    const donationSuccess = document.getElementById("donationSuccess");
     const developerEmail = "developers@soundslot.example";
-
-    const pageParams = new URLSearchParams(window.location.search);
-    if (pageParams.get("donation") === "success") {
-      donationSuccess.textContent = "Thank you. Your donation checkout was completed.";
-      donationSuccess.classList.add("is-visible");
-    }
 
     function savedSuggestions() {
       return JSON.parse(localStorage.getItem("soundslotDeveloperSuggestions") || "[]");
@@ -148,33 +115,6 @@
       form.reset();
     });
 
-    donationForm.addEventListener("submit", async event => {
-      event.preventDefault();
-
-      const donation = {
-        name: document.getElementById("donorName").value || "Anonymous",
-        email: document.getElementById("donorEmail").value,
-        amount: Number(document.getElementById("donationAmount").value),
-        message: document.getElementById("donationMessage").value
-      };
-
-      try {
-        donationSuccess.textContent = "Creating secure checkout...";
-        donationSuccess.classList.add("is-visible");
-        const response = await fetch("/api/donations", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(donation)
-        });
-        const savedDonation = await response.json();
-        if (!response.ok) throw new Error(savedDonation.error || savedDonation.setup || "Donation checkout unavailable");
-        if (!savedDonation.checkoutUrl) throw new Error("The payment provider did not return a checkout link.");
-        window.location.href = savedDonation.checkoutUrl;
-      } catch (error) {
-        donationSuccess.textContent = error.message;
-        donationSuccess.classList.add("is-visible");
-      }
-    });
   </script>
   <script src="app.js"></script>
 </body>

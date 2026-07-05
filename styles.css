@@ -968,10 +968,6 @@ input[type="range"] {
   padding: clamp(1rem, 3vw, 1.5rem);
 }
 
-.donation-form {
-  grid-column: 2;
-}
-
 .instrument-picker,
 .day-picker,
 .swatch-field {
@@ -1363,10 +1359,6 @@ input[type="range"] {
     flex-direction: column;
   }
 
-  .donation-form {
-    grid-column: auto;
-  }
-
   .app-layout {
     padding-top: 0;
   }
@@ -1686,12 +1678,68 @@ button:hover,
     grid-template-columns: 1fr;
   }
 
-  .teacher-title,
-  .teacher-actions,
-  .booking-item,
-  .managed-profile {
-    flex-direction: column;
+  .teacher-title {
+    flex-direction: row;
     align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .teacher-actions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.45rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .teacher-card {
+    border-radius: 14px;
+    box-shadow: 0 8px 18px rgba(7, 22, 74, 0.06);
+  }
+
+  .teacher-card img {
+    aspect-ratio: 16 / 10;
+    max-height: 170px;
+  }
+
+  .teacher-body {
+    gap: 0.55rem;
+    padding: 0.8rem;
+  }
+
+  .teacher-title h3 {
+    font-size: 0.96rem;
+  }
+
+  .teacher-title p,
+  .teacher-card p {
+    font-size: 0.82rem;
+  }
+
+  .teacher-title strong {
+    font-size: 0.95rem;
+  }
+
+  .teacher-actions span {
+    font-size: 0.78rem;
+  }
+
+  .teacher-actions button,
+  .teacher-actions .secondary-button {
+    padding: 0.55rem 0.75rem;
+    font-size: 0.8rem;
+    min-height: 2.15rem;
+  }
+
+  .pill-row {
+    gap: 0.35rem;
+  }
+
+  .pill-row span {
+    font-size: 0.66rem;
+    padding: 0.24rem 0.44rem;
   }
 
   .booking-desk {
@@ -1748,11 +1796,39 @@ button:hover,
   }
 
   .teacher-grid {
-    gap: 0.8rem;
+    gap: 0.7rem;
   }
 
   .teacher-body {
-    padding: 0.9rem;
+    padding: 0.78rem;
+    gap: 0.5rem;
+  }
+
+  .teacher-title h3 {
+    font-size: 0.92rem;
+  }
+
+  .teacher-title p,
+  .teacher-card p {
+    font-size: 0.78rem;
+  }
+
+  .teacher-actions {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.38rem;
+  }
+
+  .teacher-actions .secondary-button {
+    display: none;
+  }
+
+  .teacher-actions button {
+    padding: 0.5rem 0.7rem;
+    font-size: 0.76rem;
+  }
+
+  .teacher-title strong {
+    font-size: 0.9rem;
   }
 
   .booking-item {

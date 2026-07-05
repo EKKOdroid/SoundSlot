@@ -66,17 +66,5 @@
       "updatedAt": "2026-05-30T12:26:48.853Z"
     }
   ],
-  "bookings": [],
-  "payments": [],
-  "donations": [
-    {
-      "id": "donation-1779994405846-4e69c4df862e2",
-      "name": "Anonymous",
-      "email": "",
-      "amount": 10,
-      "message": "",
-      "status": "legacy_recorded",
-      "createdAt": "2026-05-28T18:53:25.852Z"
-    }
-  ]
+  "bookings": []
 }

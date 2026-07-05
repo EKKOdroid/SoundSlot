@@ -7,10 +7,7 @@ const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const DATA_FILE = path.join(ROOT, "data.json");
 const APP_VERSION = "1.3.0";
-const STRIPE_API_BASE = process.env.STRIPE_API_BASE || "https://api.stripe.com/v1";
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "";
 const APP_BASE_URL = process.env.APP_BASE_URL || "";
-const APP_FEE_RATE = 0.08;
 
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -34,8 +31,6 @@ function readData() {
       teachers: [],
       users: [],
       bookings: [],
-      payments: [],
-      donations: [],
       ...JSON.parse(fs.readFileSync(DATA_FILE, "utf8"))
     };
   } catch {
@@ -43,9 +38,7 @@ function readData() {
       instruments: ["DJ", "Drums", "Guitar", "Piano", "Singing", "Violin"],
       teachers: [],
       users: [],
-      bookings: [],
-      payments: [],
-      donations: []
+      bookings: []
     };
   }
 }
@@ -63,21 +56,6 @@ function money(value) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
-function paymentSplit(amount) {
-  const gross = money(amount);
-  const appFee = money(gross * APP_FEE_RATE);
-  return {
-    gross,
-    appFeeRate: APP_FEE_RATE,
-    appFee,
-    instructorPayout: money(gross - appFee)
-  };
-}
-
-function minorUnits(amount) {
-  return Math.round(Number(amount || 0) * 100);
-}
-
 function appUrl(pathname, params = {}) {
   const base = APP_BASE_URL || `http://localhost:${PORT}`;
   const url = new URL(pathname, base.replace(/\/$/, "") + "/");
@@ -87,51 +65,6 @@ function appUrl(pathname, params = {}) {
     }
   });
   return url.toString();
-}
-
-async function createStripeCheckoutSession(payment, split, options = {}) {
-  if (!STRIPE_SECRET_KEY) {
-    return null;
-  }
-
-  const successUrl = options.successUrl || appUrl("/payment-success.html", {
-    bookingId: payment.bookingId,
-    paymentId: payment.id
-  });
-  const cancelUrl = options.cancelUrl || appUrl("/index.html");
-  const itemName = options.itemName || `${payment.instrument} lesson`;
-  const description = options.description || `SoundSlot ${payment.instrument} lesson with ${payment.teacher}`;
-  const params = new URLSearchParams();
-  params.set("mode", "payment");
-  params.set("success_url", successUrl);
-  params.set("cancel_url", cancelUrl);
-  params.set("customer_email", payment.studentEmail || "");
-  params.set("client_reference_id", payment.id);
-  params.set("metadata[bookingId]", payment.bookingId || "");
-  params.set("metadata[paymentId]", payment.id);
-  params.set("metadata[teacher]", payment.teacher || "");
-  params.set("metadata[instrument]", payment.instrument || "");
-  params.set("metadata[studentEmail]", payment.studentEmail || "");
-  params.set("line_items[0][price_data][currency]", "eur");
-  params.set("line_items[0][price_data][product_data][name]", itemName);
-  params.set("line_items[0][price_data][unit_amount]", String(minorUnits(split.gross)));
-  params.set("line_items[0][quantity]", "1");
-  params.set("payment_intent_data[description]", description);
-
-  const response = await fetch(`${STRIPE_API_BASE}/checkout/sessions`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${STRIPE_SECRET_KEY}`,
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: params
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data.error?.message || "Stripe checkout failed");
-  }
-  return data;
 }
 
 function readRequestBody(request) {
@@ -420,145 +353,6 @@ const server = http.createServer(async (request, response) => {
       sendJson(response, 200, { booking, bookings: data.bookings });
     } catch {
       sendJson(response, 400, { error: "Invalid booking update" });
-    }
-    return;
-  }
-
-  if (url.pathname === "/api/payments" && request.method === "POST") {
-    try {
-      const body = JSON.parse(await readRequestBody(request));
-      const split = paymentSplit(body.amount);
-      if (split.gross <= 0) {
-        sendJson(response, 400, { error: "Payment amount must be greater than zero" });
-        return;
-      }
-
-      if (!STRIPE_SECRET_KEY) {
-        sendJson(response, 503, {
-          error: "Stripe payments are not configured",
-          setup: "Set STRIPE_SECRET_KEY on the server to enable secure checkout."
-        });
-        return;
-      }
-
-      const data = readData();
-      const payment = {
-        id: `payment-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        bookingId: body.bookingId,
-        teacher: body.teacher,
-        teacherEmail: body.teacherEmail,
-        studentName: body.studentName,
-        studentEmail: body.studentEmail,
-        instrument: body.instrument,
-        slot: body.slot,
-        status: "checkout_created",
-        ...split,
-        createdAt: new Date().toISOString()
-      };
-      const stripeSession = await createStripeCheckoutSession(payment, split, {
-        itemName: `${payment.instrument} lesson`,
-        description: `SoundSlot ${payment.instrument} lesson with ${payment.teacher}`
-      });
-      payment.checkoutUrl = stripeSession?.url;
-      payment.stripeSessionId = stripeSession?.id;
-      if (!payment.checkoutUrl) {
-        throw new Error("Stripe did not return a hosted checkout URL");
-      }
-      data.payments = [...(data.payments || []), payment];
-      writeData(data);
-      sendJson(response, 201, payment);
-    } catch (error) {
-      sendJson(response, 400, { error: error.message || "Invalid or failed payment request" });
-    }
-    return;
-  }
-
-  const paymentCompleteMatch = url.pathname.match(/^\/api\/payments\/([^/]+)\/complete$/);
-  if (paymentCompleteMatch && request.method === "PATCH") {
-    const data = readData();
-    const paymentId = decodeURIComponent(paymentCompleteMatch[1]);
-    const payment = (data.payments || []).find(item => item.id === paymentId);
-    if (!payment) {
-      sendJson(response, 404, { error: "Payment not found" });
-      return;
-    }
-
-    payment.status = "paid";
-    payment.completedAt = new Date().toISOString();
-
-    const booking = (data.bookings || []).find(item => item.id === payment.bookingId);
-    if (booking) {
-      Object.assign(booking, {
-        status: "paid",
-        paymentId: payment.id,
-        appFee: payment.appFee,
-        instructorPayout: payment.instructorPayout,
-        paidAt: payment.completedAt,
-        updatedAt: payment.completedAt
-      });
-    }
-
-    writeData(data);
-    sendJson(response, 200, { payment, booking });
-    return;
-  }
-
-  if (url.pathname === "/api/donations" && request.method === "POST") {
-    try {
-      const body = JSON.parse(await readRequestBody(request));
-      const amount = money(body.amount);
-      if (amount <= 0) {
-        sendJson(response, 400, { error: "Donation amount must be greater than zero" });
-        return;
-      }
-
-      if (!STRIPE_SECRET_KEY) {
-        sendJson(response, 503, {
-          error: "Stripe donations are not configured",
-          setup: "Set STRIPE_SECRET_KEY on the server to enable secure checkout."
-        });
-        return;
-      }
-
-      const data = readData();
-      const donation = {
-        id: `donation-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        name: body.name || "Anonymous",
-        email: body.email || "",
-        amount,
-        message: body.message || "",
-        status: "checkout_created",
-        createdAt: new Date().toISOString()
-      };
-
-      const donationSession = await createStripeCheckoutSession(
-        {
-          id: donation.id,
-          bookingId: donation.id,
-          teacher: "SoundSlot developer fund",
-          studentName: donation.name,
-          studentEmail: donation.email,
-          instrument: "Developer donation"
-        },
-        { gross: amount },
-        {
-          description: "SoundSlot developer donation",
-          itemName: "Developer donation",
-          successUrl: appUrl("/contact.html", { donation: "success", donationId: donation.id }),
-          cancelUrl: appUrl("/contact.html")
-        }
-      );
-
-      donation.stripeSessionId = donationSession?.id;
-      donation.checkoutUrl = donationSession?.url;
-      if (!donation.checkoutUrl) {
-        throw new Error("Revolut did not return a hosted checkout URL");
-      }
-      data.donations = [...(data.donations || []), donation];
-      writeData(data);
-      sendJson(response, 201, donation);
-    } catch (error) {
-      sendJson(response, 400, { error: error.message || "Invalid donation request" });
     }
     return;
   }

@@ -190,17 +190,6 @@
     </div>
   </dialog>
 
-  <dialog class="booking-modal" id="paymentModal">
-    <form method="dialog" class="modal-card" id="paymentForm">
-      <button class="icon-button close-modal" type="button" id="closePayment" aria-label="Close payment form">x</button>
-      <div id="paymentSummary"></div>
-      <div class="success-message" id="paymentMessage"></div>
-      <button type="submit">Continue to secure checkout</button>
-      <p class="calendar-note">You will be sent to Stripe to complete the lesson payment securely.</p>
-      <p class="calendar-note">An 8% platform fee is added to the lesson total to support secure checkout and platform costs.</p>
-    </form>
-  </dialog>
-
   <dialog class="booking-modal" id="authModal">
     <form method="dialog" class="modal-card" id="authForm">
       <button class="icon-button close-modal" type="button" id="closeAuth" aria-label="Close login form">x</button>
@@ -410,17 +399,12 @@
     const bookingList = document.getElementById("bookingList");
     const profileModal = document.getElementById("profileModal");
     const profileContent = document.getElementById("profileContent");
-    const paymentModal = document.getElementById("paymentModal");
-    const paymentForm = document.getElementById("paymentForm");
-    const paymentSummary = document.getElementById("paymentSummary");
-    const paymentMessage = document.getElementById("paymentMessage");
     const authModal = document.getElementById("authModal");
     const authForm = document.getElementById("authForm");
     let selectedTeacher = null;
     let selectedSlot = null;
     let selectedDateKey = null;
     let calendarMonth = new Date();
-    let selectedPaymentIndex = null;
     let pendingBookingAfterAuth = false;
     let marketplaceSyncing = false;
 
@@ -650,18 +634,6 @@
       } finally {
         marketplaceSyncing = false;
       }
-    }
-
-    function paymentSplit(amount) {
-      const gross = Math.round(Number(amount || 0) * 100) / 100;
-      const appFeeRate = 0.08;
-      const appFee = Math.round(gross * appFeeRate * 100) / 100;
-      return {
-        gross,
-        appFeeRate,
-        appFee,
-        instructorPayout: Math.round((gross - appFee) * 100) / 100
-      };
     }
 
     function storedProfileActivity() {
@@ -937,32 +909,11 @@
             <span>${booking.email}</span>
             ${booking.price ? `<span>Lesson total: &euro;${Number(booking.price).toFixed(2)}</span>` : ""}
             <span class="status-pill status-${booking.status || "pending"}">${booking.status || "pending instructor approval"}</span>
-            ${booking.paymentId ? `<span>Payment recorded: ${booking.paymentId}</span>` : ""}
           </div>
-          ${booking.status === "accepted" && !booking.paymentId ? `<button type="button" data-pay="${index}">Pay</button>` : ""}
           <button type="button" data-cancel="${index}">Cancel</button>
         </article>
       `;
       }).join("") || `<div class="empty-state">No booking requests yet. Pick a teacher and your request will appear here.</div>`;
-    }
-
-    function openPayment(index) {
-      const booking = storedBookings()[index];
-      const split = paymentSplit(booking.price);
-      selectedPaymentIndex = index;
-      paymentSummary.innerHTML = `
-        <p class="eyebrow">Lesson payment</p>
-        <h2>${booking.instrument} with ${booking.teacher}</h2>
-        <p>${booking.slot}</p>
-        <div class="fee-breakdown">
-          <div><span>Lesson total</span><strong>&euro;${split.gross.toFixed(2)}</strong></div>
-          <div><span>App fee (${(split.appFeeRate * 100).toFixed(1)}%)</span><strong>&euro;${split.appFee.toFixed(2)}</strong></div>
-          <div><span>Instructor payout</span><strong>&euro;${split.instructorPayout.toFixed(2)}</strong></div>
-        </div>
-      `;
-      paymentMessage.textContent = "";
-      paymentMessage.classList.remove("is-visible");
-      paymentModal.showModal();
     }
 
     async function submitBookingRequest() {
@@ -1171,12 +1122,6 @@
     });
 
     bookingList.addEventListener("click", async event => {
-      const payButton = event.target.closest("[data-pay]");
-      if (payButton) {
-        openPayment(Number(payButton.dataset.pay));
-        return;
-      }
-
       const button = event.target.closest("[data-cancel]");
       if (!button) return;
       const bookings = storedBookings();
@@ -1184,52 +1129,6 @@
       if (!booking) return;
       await updateSharedBooking(booking.id, { status: "cancelled", cancelledAt: new Date().toISOString() });
       await syncMarketplace();
-    });
-
-    document.getElementById("closePayment").addEventListener("click", () => paymentModal.close());
-
-    paymentForm.addEventListener("submit", async event => {
-      event.preventDefault();
-      const bookings = storedBookings();
-      const booking = bookings[selectedPaymentIndex];
-      if (!booking) return;
-      const split = paymentSplit(booking.price);
-
-      const paymentPayload = {
-        bookingId: booking.id,
-        teacher: booking.teacher,
-        teacherEmail: booking.teacherEmail,
-        studentName: booking.name,
-        studentEmail: booking.email,
-        instrument: booking.instrument,
-        slot: booking.slot,
-        amount: split.gross
-      };
-
-      try {
-        paymentMessage.textContent = "Creating secure checkout...";
-        paymentMessage.classList.add("is-visible");
-        const response = await fetch("/api/payments", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(paymentPayload)
-        });
-        const payment = await response.json();
-        if (!response.ok) throw new Error(payment.error || payment.setup || "Payment checkout unavailable");
-        if (!payment.checkoutUrl) throw new Error("The payment provider did not return a checkout link.");
-
-        await updateSharedBooking(booking.id, {
-          status: "payment_pending",
-          paymentId: payment.id,
-          appFee: payment.appFee,
-          instructorPayout: payment.instructorPayout,
-          checkoutStartedAt: new Date().toISOString()
-        });
-        window.location.href = payment.checkoutUrl;
-      } catch (error) {
-        paymentMessage.textContent = error.message;
-        paymentMessage.classList.add("is-visible");
-      }
     });
 
     async function initMarketplace() {
