@@ -7,12 +7,10 @@ const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const DATA_FILE = path.join(ROOT, "data.json");
 const APP_VERSION = "1.3.0";
-const REVOLUT_API_BASE = process.env.REVOLUT_API_BASE || "https://merchant.revolut.com/api";
-const REVOLUT_API_VERSION = process.env.REVOLUT_API_VERSION || "2024-05-01";
-const REVOLUT_SECRET_KEY = process.env.REVOLUT_SECRET_KEY || "";
+const STRIPE_API_BASE = process.env.STRIPE_API_BASE || "https://api.stripe.com/v1";
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "";
 const APP_BASE_URL = process.env.APP_BASE_URL || "";
-const ADMIN_OWNER = process.env.ADMIN_OWNER || "Alison";
-const ADMIN_KEY = process.env.ADMIN_KEY || "Alison2026!";
+const APP_FEE_RATE = 0.08;
 
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -67,11 +65,10 @@ function money(value) {
 
 function paymentSplit(amount) {
   const gross = money(amount);
-  const appFeeRate = 0.015;
-  const appFee = money(gross * appFeeRate);
+  const appFee = money(gross * APP_FEE_RATE);
   return {
     gross,
-    appFeeRate,
+    appFeeRate: APP_FEE_RATE,
     appFee,
     instructorPayout: money(gross - appFee)
   };
@@ -82,8 +79,8 @@ function minorUnits(amount) {
 }
 
 function appUrl(pathname, params = {}) {
-  if (!APP_BASE_URL) return undefined;
-  const url = new URL(pathname, APP_BASE_URL.replace(/\/$/, "") + "/");
+  const base = APP_BASE_URL || `http://localhost:${PORT}`;
+  const url = new URL(pathname, base.replace(/\/$/, "") + "/");
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== "") {
       url.searchParams.set(key, value);
@@ -92,52 +89,47 @@ function appUrl(pathname, params = {}) {
   return url.toString();
 }
 
-async function createRevolutOrder(payment, split, options = {}) {
-  if (!REVOLUT_SECRET_KEY) {
+async function createStripeCheckoutSession(payment, split, options = {}) {
+  if (!STRIPE_SECRET_KEY) {
     return null;
   }
 
-  const redirectUrl = options.redirectUrl || appUrl("/payment-success.html", {
+  const successUrl = options.successUrl || appUrl("/payment-success.html", {
     bookingId: payment.bookingId,
     paymentId: payment.id
   });
+  const cancelUrl = options.cancelUrl || appUrl("/index.html");
   const itemName = options.itemName || `${payment.instrument} lesson`;
   const description = options.description || `SoundSlot ${payment.instrument} lesson with ${payment.teacher}`;
-  const customer = {};
-  if (payment.studentEmail) customer.email = payment.studentEmail;
-  if (payment.studentName) customer.full_name = payment.studentName;
+  const params = new URLSearchParams();
+  params.set("mode", "payment");
+  params.set("success_url", successUrl);
+  params.set("cancel_url", cancelUrl);
+  params.set("customer_email", payment.studentEmail || "");
+  params.set("client_reference_id", payment.id);
+  params.set("metadata[bookingId]", payment.bookingId || "");
+  params.set("metadata[paymentId]", payment.id);
+  params.set("metadata[teacher]", payment.teacher || "");
+  params.set("metadata[instrument]", payment.instrument || "");
+  params.set("metadata[studentEmail]", payment.studentEmail || "");
+  params.set("line_items[0][price_data][currency]", "eur");
+  params.set("line_items[0][price_data][product_data][name]", itemName);
+  params.set("line_items[0][price_data][unit_amount]", String(minorUnits(split.gross)));
+  params.set("line_items[0][quantity]", "1");
+  params.set("payment_intent_data[description]", description);
 
-  const response = await fetch(`${REVOLUT_API_BASE}/orders`, {
+  const response = await fetch(`${STRIPE_API_BASE}/checkout/sessions`, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${REVOLUT_SECRET_KEY}`,
-      "Content-Type": "application/json",
-      "Revolut-Api-Version": REVOLUT_API_VERSION
+      "Authorization": `Bearer ${STRIPE_SECRET_KEY}`,
+      "Content-Type": "application/x-www-form-urlencoded"
     },
-    body: JSON.stringify({
-      amount: minorUnits(split.gross),
-      currency: "EUR",
-      description,
-      redirect_url: redirectUrl,
-      customer,
-      merchant_order_data: {
-        reference: options.reference || payment.bookingId || payment.id
-      },
-      line_items: [
-        {
-          name: itemName,
-          type: "service",
-          quantity: { value: 1 },
-          unit_price_amount: minorUnits(split.gross),
-          total_amount: minorUnits(split.gross)
-        }
-      ]
-    })
+    body: params
   });
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.message || data.error || "Revolut order failed");
+    throw new Error(data.error?.message || "Stripe checkout failed");
   }
   return data;
 }
@@ -162,11 +154,6 @@ function safePath(urlPath) {
   return filePath.startsWith(ROOT) ? filePath : null;
 }
 
-function isAdminRequest(request, url) {
-  const key = request.headers["x-admin-key"] || url.searchParams.get("adminKey");
-  return key === ADMIN_KEY;
-}
-
 function byNewest(items, key = "createdAt") {
   return [...items].sort((a, b) => new Date(b[key] || 0) - new Date(a[key] || 0));
 }
@@ -181,59 +168,6 @@ const server = http.createServer(async (request, response) => {
       version: APP_VERSION,
       uptime: process.uptime(),
       timestamp: new Date().toISOString()
-    });
-    return;
-  }
-
-  if (url.pathname === "/api/admin/overview" && request.method === "GET") {
-    if (!isAdminRequest(request, url)) {
-      sendJson(response, 401, { error: "Admin access code required" });
-      return;
-    }
-
-    const data = readData();
-    const teachers = data.teachers || [];
-    const users = data.users || [];
-    const bookings = data.bookings || [];
-    const payments = data.payments || [];
-    const donations = data.donations || [];
-    const paidPayments = payments.filter(payment => payment.status === "paid");
-    const paidDonationTotal = donations
-      .filter(donation => ["paid", "completed", "legacy_recorded"].includes(donation.status))
-      .reduce((total, donation) => total + Number(donation.amount || 0), 0);
-
-    sendJson(response, 200, {
-      owner: ADMIN_OWNER,
-      app: "SoundSlot",
-      version: APP_VERSION,
-      generatedAt: new Date().toISOString(),
-      paymentProvider: {
-        revolutConfigured: Boolean(REVOLUT_SECRET_KEY && APP_BASE_URL),
-        appBaseUrl: APP_BASE_URL || null,
-        appFeeRate: 0.015
-      },
-      metrics: {
-        teachers: teachers.length,
-        users: users.length,
-        instruments: (data.instruments || []).length,
-        bookings: bookings.length,
-        pendingBookings: bookings.filter(booking => booking.status === "pending").length,
-        acceptedBookings: bookings.filter(booking => booking.status === "accepted").length,
-        paidBookings: bookings.filter(booking => booking.status === "paid").length,
-        payments: payments.length,
-        paidPayments: paidPayments.length,
-        lessonGross: money(paidPayments.reduce((total, payment) => total + Number(payment.gross || 0), 0)),
-        appFees: money(paidPayments.reduce((total, payment) => total + Number(payment.appFee || 0), 0)),
-        instructorPayouts: money(paidPayments.reduce((total, payment) => total + Number(payment.instructorPayout || 0), 0)),
-        donations: donations.length,
-        donationTotal: money(paidDonationTotal)
-      },
-      teachers: byNewest(teachers, "updatedAt"),
-      users: byNewest(users, "updatedAt"),
-      bookings: byNewest(bookings, "updatedAt"),
-      payments: byNewest(payments, "createdAt"),
-      donations: byNewest(donations, "createdAt"),
-      instruments: sortedUniqueInstruments(data.instruments || [])
     });
     return;
   }
@@ -499,10 +433,10 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
-      if (!REVOLUT_SECRET_KEY || !APP_BASE_URL) {
+      if (!STRIPE_SECRET_KEY) {
         sendJson(response, 503, {
-          error: "Revolut payments are not configured",
-          setup: "Set REVOLUT_SECRET_KEY and a public HTTPS APP_BASE_URL on the server."
+          error: "Stripe payments are not configured",
+          setup: "Set STRIPE_SECRET_KEY on the server to enable secure checkout."
         });
         return;
       }
@@ -521,12 +455,14 @@ const server = http.createServer(async (request, response) => {
         ...split,
         createdAt: new Date().toISOString()
       };
-      const revolutOrder = await createRevolutOrder(payment, split);
-      payment.revolutOrderId = revolutOrder.id;
-      payment.revolutToken = revolutOrder.token;
-      payment.checkoutUrl = revolutOrder.checkout_url;
+      const stripeSession = await createStripeCheckoutSession(payment, split, {
+        itemName: `${payment.instrument} lesson`,
+        description: `SoundSlot ${payment.instrument} lesson with ${payment.teacher}`
+      });
+      payment.checkoutUrl = stripeSession?.url;
+      payment.stripeSessionId = stripeSession?.id;
       if (!payment.checkoutUrl) {
-        throw new Error("Revolut did not return a hosted checkout URL");
+        throw new Error("Stripe did not return a hosted checkout URL");
       }
       data.payments = [...(data.payments || []), payment];
       writeData(data);
@@ -576,10 +512,10 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
-      if (!REVOLUT_SECRET_KEY || !APP_BASE_URL) {
+      if (!STRIPE_SECRET_KEY) {
         sendJson(response, 503, {
-          error: "Revolut donations are not configured",
-          setup: "Set REVOLUT_SECRET_KEY and a public HTTPS APP_BASE_URL on the server."
+          error: "Stripe donations are not configured",
+          setup: "Set STRIPE_SECRET_KEY on the server to enable secure checkout."
         });
         return;
       }
@@ -595,7 +531,7 @@ const server = http.createServer(async (request, response) => {
         createdAt: new Date().toISOString()
       };
 
-      const donationOrder = await createRevolutOrder(
+      const donationSession = await createStripeCheckoutSession(
         {
           id: donation.id,
           bookingId: donation.id,
@@ -608,14 +544,13 @@ const server = http.createServer(async (request, response) => {
         {
           description: "SoundSlot developer donation",
           itemName: "Developer donation",
-          reference: donation.id,
-          redirectUrl: appUrl("/contact.html", { donation: "success", donationId: donation.id })
+          successUrl: appUrl("/contact.html", { donation: "success", donationId: donation.id }),
+          cancelUrl: appUrl("/contact.html")
         }
       );
 
-      donation.revolutOrderId = donationOrder.id;
-      donation.revolutToken = donationOrder.token;
-      donation.checkoutUrl = donationOrder.checkout_url;
+      donation.stripeSessionId = donationSession?.id;
+      donation.checkoutUrl = donationSession?.url;
       if (!donation.checkoutUrl) {
         throw new Error("Revolut did not return a hosted checkout URL");
       }
