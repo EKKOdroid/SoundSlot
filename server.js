@@ -1,6 +1,8 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const Stripe = require("stripe");
+const { calculatePaywallAmount } = require("./paywall");
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -8,6 +10,8 @@ const ROOT = __dirname;
 const DATA_FILE = path.join(ROOT, "data.json");
 const APP_VERSION = "1.3.0";
 const APP_BASE_URL = process.env.APP_BASE_URL || "";
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "";
+const STRIPE_CLIENT = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -65,6 +69,53 @@ function appUrl(pathname, params = {}) {
     }
   });
   return url.toString();
+}
+
+function checkoutBaseUrl() {
+  const base = (APP_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
+  return base || `http://localhost:${PORT}`;
+}
+
+function checkoutRedirectUrl(kind, recordId, email, checkoutState = "success") {
+  const url = new URL(`${checkoutBaseUrl()}/`);
+  url.searchParams.set("checkout", checkoutState);
+  url.searchParams.set("kind", kind);
+  if (recordId) {
+    url.searchParams.set("recordId", recordId);
+  }
+  if (email) {
+    url.searchParams.set("email", email);
+  }
+  return url.toString();
+}
+
+function finalizeCheckoutRecord(data, kind, recordId, session) {
+  const paidAt = new Date().toISOString();
+  const amountPaid = Number(session?.amount_total || 0) / 100;
+
+  if (kind === "booking") {
+    const booking = (data.bookings || []).find(item => String(item.id) === String(recordId));
+    if (booking) {
+      booking.status = "paid";
+      booking.paidAt = paidAt;
+      booking.paymentSessionId = session?.id || "";
+      booking.totalAmount = amountPaid;
+      booking.updatedAt = paidAt;
+    }
+  }
+
+  if (kind === "teacher") {
+    const teacher = (data.teachers || []).find(item => String(item.id) === String(recordId));
+    if (teacher) {
+      teacher.status = "paid";
+      teacher.paidAt = paidAt;
+      teacher.paymentSessionId = session?.id || "";
+      teacher.totalAmount = amountPaid;
+      teacher.updatedAt = paidAt;
+    }
+  }
+
+  return data;
 }
 
 function readRequestBody(request) {
@@ -353,6 +404,100 @@ const server = http.createServer(async (request, response) => {
       sendJson(response, 200, { booking, bookings: data.bookings });
     } catch {
       sendJson(response, 400, { error: "Invalid booking update" });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/paywall/checkout" && request.method === "POST") {
+    try {
+      const body = JSON.parse(await readRequestBody(request));
+      const amount = Number(body.amount || 0);
+      const currency = String(body.currency || "eur").toLowerCase();
+      const kind = String(body.kind || "booking").toLowerCase();
+      const recordId = String(body.recordId || "").trim();
+      const email = String(body.metadata?.email || "").trim();
+      const totalCents = calculatePaywallAmount(amount);
+      const successUrl = String(body.successUrl || checkoutRedirectUrl(kind, recordId, email, "success"));
+      const cancelUrl = String(body.cancelUrl || checkoutRedirectUrl(kind, recordId, email, "cancelled"));
+
+      if (!STRIPE_CLIENT) {
+        sendJson(response, 200, {
+          ok: true,
+          mock: true,
+          url: `${checkoutBaseUrl()}/?checkout=success&kind=${encodeURIComponent(kind)}&recordId=${encodeURIComponent(recordId)}`,
+          amount: totalCents / 100,
+          fee: totalCents / 100 - amount
+        });
+        return;
+      }
+
+      const session = await STRIPE_CLIENT.checkout.sessions.create({
+        mode: "payment",
+        payment_method_types: ["card"],
+        line_items: [{
+          price_data: {
+            currency,
+            unit_amount: totalCents,
+            product_data: {
+              name: kind === "teacher" ? "SoundSlot teacher profile activation" : "SoundSlot lesson booking"
+            }
+          },
+          quantity: 1
+        }],
+        customer_email: email || undefined,
+        metadata: {
+          kind,
+          recordId,
+          ...(body.metadata || {})
+        },
+        success_url: successUrl,
+        cancel_url: cancelUrl
+      });
+
+      sendJson(response, 200, {
+        ok: true,
+        sessionId: session.id,
+        url: session.url,
+        amount: totalCents / 100,
+        fee: totalCents / 100 - amount
+      });
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to create checkout session" });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/paywall/complete" && request.method === "POST") {
+    try {
+      const body = JSON.parse(await readRequestBody(request));
+      const sessionId = String(body.sessionId || "").trim();
+      const kind = String(body.kind || "booking").toLowerCase();
+      const recordId = String(body.recordId || "").trim();
+      if (!sessionId && !recordId) {
+        sendJson(response, 400, { error: "Missing payment session data" });
+        return;
+      }
+
+      if (!STRIPE_CLIENT) {
+        const data = readData();
+        finalizeCheckoutRecord(data, kind, recordId, { id: sessionId, amount_total: Math.round(Number(body.amount || 0) * 100) });
+        writeData(data);
+        sendJson(response, 200, { ok: true, completed: true, mock: true });
+        return;
+      }
+
+      const session = await STRIPE_CLIENT.checkout.sessions.retrieve(sessionId);
+      if (!session || session.payment_status !== "paid") {
+        sendJson(response, 402, { error: "Payment not yet confirmed" });
+        return;
+      }
+
+      const data = readData();
+      finalizeCheckoutRecord(data, kind, recordId, session);
+      writeData(data);
+      sendJson(response, 200, { ok: true, completed: true, session });
+    } catch (error) {
+      sendJson(response, 400, { error: error.message || "Unable to finalize checkout" });
     }
     return;
   }

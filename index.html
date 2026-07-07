@@ -179,6 +179,18 @@
         <textarea id="lessonGoal" rows="3" placeholder="Tell the teacher what you want to work on"></textarea>
       </label>
 
+      <div class="paywall-card" id="bookingPaywallCard">
+        <p class="eyebrow">Secure checkout</p>
+        <h3>Pay the lesson fee plus the 8% platform fee</h3>
+        <p id="bookingPaywallSummary">Your booking will be held once payment is confirmed.</p>
+        <div class="fee-breakdown">
+          <div><span>Lesson price</span><strong id="bookingLessonPrice">€0.00</strong></div>
+          <div><span>Platform fee (8%)</span><strong id="bookingFeeAmount">€0.00</strong></div>
+          <div><span>Total</span><strong id="bookingTotalAmount">€0.00</strong></div>
+        </div>
+        <button type="button" id="checkoutBookingButton">Pay securely with Stripe</button>
+      </div>
+
       <button type="submit">Confirm booking</button>
     </form>
   </dialog>
@@ -820,6 +832,7 @@
         <p>${selectedTeacher.instrument} - ${selectedTeacher.type} - &euro;${selectedTeacher.price}</p>
       `;
       renderCalendar();
+      updateBookingPaywallSummary();
       bookingModal.showModal();
     }
 
@@ -916,6 +929,17 @@
       }).join("") || `<div class="empty-state">No booking requests yet. Pick a teacher and your request will appear here.</div>`;
     }
 
+    async function updateBookingPaywallSummary() {
+      if (!selectedTeacher || !selectedSlot) return;
+      const lessonPrice = Number(selectedTeacher.price || 0);
+      const totalAmount = Math.round((lessonPrice * 1.08 + Number.EPSILON) * 100) / 100;
+      const platformFee = Math.round((lessonPrice * 0.08 + Number.EPSILON) * 100) / 100;
+      document.getElementById("bookingLessonPrice").textContent = `€${lessonPrice.toFixed(2)}`;
+      document.getElementById("bookingFeeAmount").textContent = `€${platformFee.toFixed(2)}`;
+      document.getElementById("bookingTotalAmount").textContent = `€${totalAmount.toFixed(2)}`;
+      document.getElementById("bookingPaywallSummary").textContent = `The total due for ${selectedTeacher.name} is €${totalAmount.toFixed(2)} including the 8% platform fee.`;
+    }
+
     async function submitBookingRequest() {
       const booking = {
         id: `booking-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -942,6 +966,34 @@
       bookingModal.close();
       await syncMarketplace();
       document.getElementById("bookings").scrollIntoView({ behavior: "smooth" });
+    }
+
+    async function startBookingCheckout() {
+      if (!selectedTeacher || !selectedSlot) {
+        calendarNote.textContent = "Choose a teacher and a lesson time before paying.";
+        return;
+      }
+
+      const amount = Number(selectedTeacher.price || 0);
+      const email = document.getElementById("studentEmail").value || currentUser()?.email || "";
+      const recordId = `booking-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const response = await fetch("/api/paywall/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "booking",
+          amount,
+          recordId,
+          currency: "eur",
+          metadata: { email, teacherId: selectedTeacher.id, slotId: selectedSlot.id }
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.url) {
+        calendarNote.textContent = data.error || "Checkout could not be started.";
+        return;
+      }
+      window.location.href = data.url;
     }
 
     document.getElementById("searchForm").addEventListener("submit", event => {
@@ -1070,6 +1122,7 @@
       });
       button.classList.add("is-selected");
       button.setAttribute("aria-pressed", "true");
+      updateBookingPaywallSummary();
       calendarNote.textContent = `${selectedSlot.day} ${selectedSlot.label} at ${selectedSlot.time} selected.`;
     });
 
@@ -1101,6 +1154,10 @@
     document.getElementById("closeAuth").addEventListener("click", () => {
       pendingBookingAfterAuth = false;
       authModal.close();
+    });
+
+    document.getElementById("checkoutBookingButton").addEventListener("click", () => {
+      startBookingCheckout();
     });
 
     authForm.addEventListener("submit", event => {
