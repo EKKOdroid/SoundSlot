@@ -1573,3 +1573,388 @@ button,
     width: auto;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Booksy-style marketplace components (theme tokens only, no new colors) */
+/* ------------------------------------------------------------------ */
+
+.category-section {
+  width: min(100%, 1500px);
+  margin: 0 auto;
+  padding: 1.5rem clamp(1rem, 4vw, 4rem) 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.85rem;
+}
+
+.category-tile {
+  display: grid;
+  gap: 0.4rem;
+  place-items: center;
+  padding: 1rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: center;
+  box-shadow: 0 10px 24px rgba(7, 22, 74, 0.06);
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.category-tile:hover {
+  transform: translateY(-3px);
+  background: var(--surface);
+  box-shadow: 0 14px 30px rgba(7, 22, 74, 0.12);
+  border-color: rgba(154, 92, 255, 0.4);
+}
+
+.category-tile.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent) inset, 0 14px 30px rgba(7, 22, 74, 0.12);
+}
+
+.category-icon {
+  font-size: 1.7rem;
+  line-height: 1;
+}
+
+.category-name {
+  font-weight: 850;
+  font-size: 0.95rem;
+}
+
+.category-count {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+/* Star rating */
+.stars {
+  display: inline-flex;
+  gap: 1px;
+  font-size: 0.95rem;
+  line-height: 1;
+  letter-spacing: 1px;
+}
+
+.stars .star {
+  color: var(--rose);
+}
+
+.stars .star.is-empty {
+  color: var(--line);
+}
+
+.rating-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 850;
+  color: var(--ink);
+}
+
+.rating-inline .rating-count {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+/* Booksy-style provider card meta */
+.card-rating {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.card-loc {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.card-loc::before {
+  content: "\1F4CD";
+  font-size: 0.85rem;
+}
+
+/* Full profile overlay (tabbed, Booksy-like) */
+.profile-modal {
+  width: min(960px, calc(100% - 2rem));
+  max-height: calc(100vh - 2rem);
+  border: 0;
+  border-radius: 20px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.profile-modal::backdrop {
+  background: rgba(4, 12, 43, 0.66);
+}
+
+.profile-modal .modal-card {
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  padding: 0;
+  gap: 0;
+}
+
+.profile-gallery {
+  position: relative;
+  aspect-ratio: 21 / 8;
+  min-height: 200px;
+  background: var(--soft);
+}
+
+.profile-gallery img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem clamp(1rem, 3vw, 1.75rem) 0;
+}
+
+.profile-topbar h2 {
+  margin: 0.1rem 0;
+}
+
+.profile-topbar .profile-sub {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.profile-headline-rating {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.profile-price-tag {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.profile-price-tag strong {
+  display: block;
+  color: var(--rose);
+  font-size: 1.5rem;
+}
+
+.profile-price-tag span {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.profile-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin: 1rem clamp(1rem, 3vw, 1.75rem) 0;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.profile-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.profile-tab {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 850;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 3px solid transparent;
+  white-space: nowrap;
+}
+
+.profile-tab:hover {
+  background: transparent;
+  color: var(--ink);
+  transform: none;
+  box-shadow: none;
+}
+
+.profile-tab.is-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.tab-panel {
+  display: none;
+  padding: 1.25rem clamp(1rem, 3vw, 1.75rem);
+  gap: 1rem;
+}
+
+.tab-panel.is-active {
+  display: grid;
+}
+
+/* Services list */
+.service-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.service-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.service-item h4 {
+  margin: 0 0 0.25rem;
+}
+
+.service-item .service-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.service-price {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  white-space: nowrap;
+}
+
+.service-price strong {
+  color: var(--rose);
+  font-size: 1.15rem;
+}
+
+.service-book {
+  padding: 0.6rem 1rem;
+}
+
+/* Rating breakdown */
+.rating-summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1.25rem;
+  align-items: center;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--soft);
+}
+
+.rating-score-big {
+  text-align: center;
+}
+
+.rating-score-big strong {
+  display: block;
+  font-size: 2.75rem;
+  line-height: 1;
+}
+
+.rating-score-big span {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.rating-breakdown {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.rating-row {
+  display: grid;
+  grid-template-columns: 2.5rem 1fr 2.5rem;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.rating-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.rating-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+/* Review form with star input */
+.review-form {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.star-input {
+  display: inline-flex;
+  gap: 0.15rem;
+}
+
+.star-input button {
+  border: 0;
+  background: transparent;
+  color: var(--line);
+  font-size: 1.6rem;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.star-input button:hover {
+  background: transparent;
+  transform: none;
+  box-shadow: none;
+}
+
+.star-input button.is-on {
+  color: var(--rose);
+}
+
+@media (max-width: 640px) {
+  .rating-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-topbar {
+    flex-direction: column;
+  }
+
+  .profile-price-tag {
+    text-align: left;
+  }
+}

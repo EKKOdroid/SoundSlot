@@ -89,6 +89,11 @@ function checkoutRedirectUrl(kind, recordId, email, checkoutState = "success") {
   return url.toString();
 }
 
+function withSessionPlaceholder(url) {
+  // Stripe replaces {CHECKOUT_SESSION_ID} in the success URL so we can verify the payment on return.
+  return url + (url.includes("?") ? "&" : "?") + "session_id={CHECKOUT_SESSION_ID}";
+}
+
 function finalizeCheckoutRecord(data, kind, recordId, session) {
   const paidAt = new Date().toISOString();
   const amountPaid = Number(session?.amount_total || 0) / 100;
@@ -96,10 +101,15 @@ function finalizeCheckoutRecord(data, kind, recordId, session) {
   if (kind === "booking") {
     const booking = (data.bookings || []).find(item => String(item.id) === String(recordId));
     if (booking) {
+      const lessonPrice = Number(booking.price || 0);
+      const platformFee = money(lessonPrice * 0.08);
       booking.status = "paid";
       booking.paidAt = paidAt;
       booking.paymentSessionId = session?.id || "";
-      booking.totalAmount = amountPaid;
+      booking.totalAmount = amountPaid || money(lessonPrice * 1.08);
+      // The platform keeps 8% of every teacher/student transaction; the rest is the teacher payout.
+      booking.platformFee = platformFee;
+      booking.teacherPayout = money(booking.totalAmount - platformFee);
       booking.updatedAt = paidAt;
     }
   }
@@ -140,6 +150,75 @@ function safePath(urlPath) {
 
 function byNewest(items, key = "createdAt") {
   return [...items].sort((a, b) => new Date(b[key] || 0) - new Date(a[key] || 0));
+}
+
+function recomputeTeacherRating(teacher) {
+  const list = Array.isArray(teacher.reviewsList) ? teacher.reviewsList : [];
+  if (list.length) {
+    const total = list.reduce((sum, review) => sum + Number(review.rating || 0), 0);
+    teacher.rating = Math.round((total / list.length) * 100) / 100;
+    teacher.reviews = list.length;
+  }
+  return teacher;
+}
+
+// Booksy-style shapes: map SoundSlot records onto the marketplace vocabulary Booksy's
+// public API uses (businesses / services / staffers / appointments / reviews).
+function teacherToBusiness(teacher) {
+  const instruments = teacher.instruments || [teacher.instrument].filter(Boolean);
+  return {
+    id: teacher.id,
+    name: teacher.name,
+    category: instruments[0] || "Music",
+    categories: instruments,
+    thumbnail: teacher.image || "",
+    review_score: Number(teacher.rating || 0),
+    reviews_count: Number(teacher.reviews || 0),
+    location: { city: teacher.area || "", type: teacher.type || "Online" },
+    price_from: Number(teacher.price || 0),
+    services: teacherToServices(teacher),
+    staffers: [teacherToStaffer(teacher)],
+    description: teacher.bio || ""
+  };
+}
+
+function teacherToServices(teacher) {
+  const instruments = teacher.instruments || [teacher.instrument].filter(Boolean);
+  return instruments.map((instrument, index) => ({
+    id: `${teacher.id}:${instrument}`,
+    business_id: teacher.id,
+    name: `${instrument} lesson`,
+    category: instrument,
+    price: Number(teacher.price || 0),
+    duration: 60,
+    type: teacher.type || "Online",
+    default: index === 0
+  }));
+}
+
+function teacherToStaffer(teacher) {
+  return {
+    id: teacher.id,
+    business_id: teacher.id,
+    name: teacher.name,
+    thumbnail: teacher.image || "",
+    review_score: Number(teacher.rating || 0)
+  };
+}
+
+function bookingToAppointment(booking) {
+  return {
+    id: booking.id,
+    business_id: booking.teacherId,
+    business_name: booking.teacher,
+    service_name: booking.instrument ? `${booking.instrument} lesson` : "Lesson",
+    customer: { name: booking.name, email: booking.email },
+    booked_from: booking.slotDate && booking.slotTime ? `${booking.slotDate}T${booking.slotTime}` : booking.slot,
+    slot_label: booking.slot,
+    price: Number(booking.price || 0),
+    status: booking.status || "pending",
+    created_at: booking.requestedAt || booking.createdAt || null
+  };
 }
 
 const server = http.createServer(async (request, response) => {
@@ -448,9 +527,12 @@ const server = http.createServer(async (request, response) => {
         metadata: {
           kind,
           recordId,
+          platformFeePct: "8",
+          platformFee: String(money(amount * 0.08)),
+          teacherPayout: String(money(amount)),
           ...(body.metadata || {})
         },
-        success_url: successUrl,
+        success_url: withSessionPlaceholder(successUrl),
         cancel_url: cancelUrl
       });
 
@@ -498,6 +580,189 @@ const server = http.createServer(async (request, response) => {
       sendJson(response, 200, { ok: true, completed: true, session });
     } catch (error) {
       sendJson(response, 400, { error: error.message || "Unable to finalize checkout" });
+    }
+    return;
+  }
+
+  // Reviews (Booksy-style) — persist a rating + comment against a teacher and recompute the score.
+  const reviewMatch = url.pathname.match(/^\/api\/teachers\/([^/]+)\/reviews$/);
+  if (reviewMatch && request.method === "GET") {
+    const teacherId = decodeURIComponent(reviewMatch[1]);
+    const data = readData();
+    const teacher = (data.teachers || []).find(item => String(item.id) === teacherId);
+    if (!teacher) {
+      sendJson(response, 404, { error: "Teacher profile not found" });
+      return;
+    }
+    sendJson(response, 200, {
+      reviews: teacher.reviewsList || [],
+      review_score: Number(teacher.rating || 0),
+      reviews_count: Number(teacher.reviews || 0)
+    });
+    return;
+  }
+
+  if (reviewMatch && request.method === "POST") {
+    try {
+      const teacherId = decodeURIComponent(reviewMatch[1]);
+      const body = JSON.parse(await readRequestBody(request));
+      const name = String(body.name || "").trim();
+      const text = String(body.text || body.comment || "").trim();
+      const rating = Math.max(1, Math.min(5, Math.round(Number(body.rating || 0))));
+      if (!name || !text || !rating) {
+        sendJson(response, 400, { error: "Name, rating (1-5), and review text are required" });
+        return;
+      }
+
+      const data = readData();
+      const teacher = (data.teachers || []).find(item => String(item.id) === teacherId);
+      if (!teacher) {
+        sendJson(response, 404, { error: "Teacher profile not found" });
+        return;
+      }
+
+      const review = {
+        id: `review-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        name,
+        rating,
+        text,
+        createdAt: new Date().toISOString()
+      };
+      teacher.reviewsList = [review, ...(teacher.reviewsList || [])];
+      recomputeTeacherRating(teacher);
+      teacher.updatedAt = new Date().toISOString();
+      writeData(data);
+      sendJson(response, 201, {
+        review,
+        reviews: teacher.reviewsList,
+        review_score: Number(teacher.rating || 0),
+        reviews_count: Number(teacher.reviews || 0),
+        teacher
+      });
+    } catch {
+      sendJson(response, 400, { error: "Invalid review" });
+    }
+    return;
+  }
+
+  // GET a single teacher (also exposed as a Booksy "business").
+  const teacherIdMatch = url.pathname.match(/^\/api\/teachers\/([^/]+)$/);
+  if (teacherIdMatch && request.method === "GET") {
+    const teacherId = decodeURIComponent(teacherIdMatch[1]);
+    const data = readData();
+    const teacher = (data.teachers || []).find(item => String(item.id) === teacherId);
+    if (!teacher) {
+      sendJson(response, 404, { error: "Teacher profile not found" });
+      return;
+    }
+    sendJson(response, 200, { teacher });
+    return;
+  }
+
+  // Booksy-style aliases mapping the same data onto the marketplace vocabulary.
+  if (url.pathname === "/api/businesses" && request.method === "GET") {
+    const data = readData();
+    let businesses = (data.teachers || []).map(teacherToBusiness);
+    const category = url.searchParams.get("category");
+    const type = url.searchParams.get("type");
+    const query = (url.searchParams.get("q") || "").toLowerCase();
+    const maxPrice = Number(url.searchParams.get("max_price") || 0);
+    if (category && category !== "all") {
+      businesses = businesses.filter(item => item.categories.includes(category));
+    }
+    if (type && type !== "all") {
+      businesses = businesses.filter(item => item.location.type === type);
+    }
+    if (query) {
+      businesses = businesses.filter(item =>
+        `${item.name} ${item.categories.join(" ")} ${item.location.city}`.toLowerCase().includes(query));
+    }
+    if (maxPrice > 0) {
+      businesses = businesses.filter(item => item.price_from <= maxPrice);
+    }
+    sendJson(response, 200, { businesses });
+    return;
+  }
+
+  const businessIdMatch = url.pathname.match(/^\/api\/businesses\/([^/]+)$/);
+  if (businessIdMatch && request.method === "GET") {
+    const businessId = decodeURIComponent(businessIdMatch[1]);
+    const data = readData();
+    const teacher = (data.teachers || []).find(item => String(item.id) === businessId);
+    if (!teacher) {
+      sendJson(response, 404, { error: "Business not found" });
+      return;
+    }
+    sendJson(response, 200, { business: teacherToBusiness(teacher) });
+    return;
+  }
+
+  if (url.pathname === "/api/services" && request.method === "GET") {
+    const data = readData();
+    const businessId = url.searchParams.get("business_id");
+    let services = (data.teachers || [])
+      .filter(teacher => !businessId || String(teacher.id) === businessId)
+      .flatMap(teacherToServices);
+    sendJson(response, 200, { services });
+    return;
+  }
+
+  if (url.pathname === "/api/staff" && request.method === "GET") {
+    const data = readData();
+    const businessId = url.searchParams.get("business_id");
+    const staff = (data.teachers || [])
+      .filter(teacher => !businessId || String(teacher.id) === businessId)
+      .map(teacherToStaffer);
+    sendJson(response, 200, { staff });
+    return;
+  }
+
+  if (url.pathname === "/api/appointments" && request.method === "GET") {
+    const data = readData();
+    const appointments = byNewest(data.bookings || [], "requestedAt").map(bookingToAppointment);
+    sendJson(response, 200, { appointments });
+    return;
+  }
+
+  if (url.pathname === "/api/appointments" && request.method === "POST") {
+    try {
+      const body = JSON.parse(await readRequestBody(request));
+      const teacherId = body.teacherId || body.business_id || body.staffer_id;
+      const studentEmail = String(body.studentEmail || body.email || body.customer?.email || "").trim().toLowerCase();
+      const slotId = body.slotId || body.slot_id;
+      if (!teacherId || !studentEmail || !slotId) {
+        sendJson(response, 400, { error: "Business, customer email, and slot are required" });
+        return;
+      }
+
+      const data = readData();
+      const teacher = (data.teachers || []).find(item => String(item.id) === String(teacherId));
+      const user = (data.users || []).find(item => item.email.toLowerCase() === studentEmail);
+      const booking = {
+        id: body.id || `booking-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        teacherId,
+        teacher: body.teacher || teacher?.name || "",
+        teacherEmail: body.teacherEmail || teacher?.email || "",
+        instrument: body.instrument || body.service || teacher?.instrument || "",
+        price: Number(body.price || teacher?.price || 0),
+        slotId,
+        slot: body.slot || body.slot_label || "",
+        slotDate: body.slotDate || "",
+        slotTime: body.slotTime || "",
+        userId: body.userId || user?.id || "",
+        name: body.name || body.customer?.name || "",
+        email: studentEmail,
+        studentEmail,
+        goal: body.goal || "",
+        status: body.status || "pending",
+        requestedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      data.bookings = [...(data.bookings || []).filter(item => item.id !== booking.id), booking];
+      writeData(data);
+      sendJson(response, 201, { appointment: bookingToAppointment(booking), booking });
+    } catch {
+      sendJson(response, 400, { error: "Invalid appointment request" });
     }
     return;
   }
